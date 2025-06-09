@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { StepsList } from "../components/StepsList";
+import { FileExplorer } from "../components/FileExplorer";
+import { TabView } from "../components/TabView";
+import { CodeEditor } from "../components/CodeEditor";
+import { PreviewFrame } from "../components/PreviewFrame";
 import { Step, FileItem, StepType } from "../types";
-import { BACKEND_URL } from "../config";
 import axios from "axios";
+import { BACKEND_URL } from "../config";
 import { parseXml } from "../steps";
+import { useWebContainer } from "../hooks/useWebContainer";
+import { Loader } from "../components/Loader";
 
 const MOCK_FILE_CONTENT = `// This is a sample file content
 import React from 'react';
@@ -22,15 +28,147 @@ export function Builder() {
   const { prompt } = location.state as { prompt: string }; // this brings data from user
 
   const [userPrompt, setPrompt] = useState("");
-
-  const [loading, setLoading] = useState(false);
-
   const [llmMessages, setLlmMessages] = useState<
     { role: "user" | "assistant"; content: string }[]
   >([]);
 
+  const [loading, setLoading] = useState(false);
+  const [templateSet, setTemplateSet] = useState(false);
+  const webcontainer = useWebContainer();
+
+  const [currentStep, setCurrentStep] = useState(1);
+  const [activeTab, setActiveTab] = useState<"code" | "preview">("code");
+  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+
   const [files, setFiles] = useState<FileItem[]>([]); //empty file driectory
   const [steps, setSteps] = useState<Step[]>([]); // empty steps
+
+  // What is this effect is doing is  taking the data from steps we got from init ()
+
+  useEffect(() => {
+    let originalFiles = [...files];
+    let updateHappened = false;
+    // Filter for steps that are "pending" and iterate over them.
+    steps
+      .filter(({ status }) => status === "pending")
+      .map((step) => {
+        updateHappened = true;
+
+        // Only process steps of type 'CreateFile'.
+        if (step?.type === StepType.CreateFile) {
+          let parsedPath = step.path?.split("/") ?? []; // ["src", "components", "App.tsx"]
+          let currentFileStructure = [...originalFiles]; // {}
+          let finalAnswerRef = currentFileStructure;
+
+          let currentFolder = "";
+          while (parsedPath.length) {
+            currentFolder = `${currentFolder}/${parsedPath[0]}`;
+            let currentFolderName = parsedPath[0];
+            parsedPath = parsedPath.slice(1);
+
+            if (!parsedPath.length) {
+              // final file
+              let file = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              );
+              if (!file) {
+                currentFileStructure.push({
+                  name: currentFolderName,
+                  type: "file",
+                  path: currentFolder,
+                  content: step.code,
+                });
+              } else {
+                file.content = step.code;
+              }
+            } else {
+              /// in a folder
+              let folder = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              );
+              if (!folder) {
+                // create the folder
+                currentFileStructure.push({
+                  name: currentFolderName,
+                  type: "folder",
+                  path: currentFolder,
+                  children: [],
+                });
+              }
+
+              currentFileStructure = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              )!.children!;
+            }
+          }
+          originalFiles = finalAnswerRef;
+        }
+      });
+
+    if (updateHappened) {
+      setFiles(originalFiles);
+      setSteps((steps) =>
+        steps.map((s: Step) => {
+          return {
+            ...s,
+            status: "completed",
+          };
+        })
+      );
+    }
+    console.log(files);
+  }, [steps, files]);
+
+  // This has something to do with the webconatiner ig
+  useEffect(() => {
+    const createMountStructure = (files: FileItem[]): Record<string, any> => {
+      const mountStructure: Record<string, any> = {};
+
+      const processFile = (file: FileItem, isRootFolder: boolean) => {
+        if (file.type === "folder") {
+          // For folders, create a directory entry
+          mountStructure[file.name] = {
+            directory: file.children
+              ? Object.fromEntries(
+                  file.children.map((child) => [
+                    child.name,
+                    processFile(child, false),
+                  ])
+                )
+              : {},
+          };
+        } else if (file.type === "file") {
+          if (isRootFolder) {
+            mountStructure[file.name] = {
+              file: {
+                contents: file.content || "",
+              },
+            };
+          } else {
+            // For files, create a file entry with contents
+            return {
+              file: {
+                contents: file.content || "",
+              },
+            };
+          }
+        }
+
+        return mountStructure[file.name];
+      };
+
+      // Process each top-level file/folder
+      files.forEach((file) => processFile(file, true));
+
+      return mountStructure;
+    };
+
+    const mountStructure = createMountStructure(files);
+
+    // Mount the structure if WebContainer is available
+    console.log(mountStructure);
+    webcontainer?.mount(mountStructure);
+  }, [files, webcontainer]);
 
   async function init() {
     // we hit the backend with this function
@@ -91,4 +229,8 @@ export function Builder() {
   useEffect(() => {
     init();
   }, []);
+
+  // return (
+    
+  // );
 }
