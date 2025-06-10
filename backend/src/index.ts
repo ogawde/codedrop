@@ -1,7 +1,9 @@
 
 require("dotenv").config();
 import express from "express";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+
+
+import { GoogleGenAI } from "@google/genai";
 
 import { BASE_PROMPT, getSystemPrompt } from "./prompts";
 import { nodeBasePrompt } from "./defaults/node";
@@ -15,8 +17,7 @@ if (!apiKey) {
   process.exit(1); 
 }
 
-// Initialize the client with the validated key
-const genAI = new GoogleGenerativeAI(apiKey);
+const genAI = new GoogleGenAI({ apiKey });
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -24,16 +25,15 @@ app.use(express.json());
 app.post("/template", async (req, res) => {
     try {
         const prompt = req.body.prompt;
+        const systemInstruction = "Return either node or react based on what you think this project should be. Only return a single word either 'node' or 'react'. Do not return anything extra.";
+        const fullPrompt = `${systemInstruction}\n\nUser prompt: ${prompt}`;
         
-        const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash-latest",
-            systemInstruction: "Return either node or react based on what you think this project should be. Only return a single word either 'node' or 'react'. Do not return anything extra.",
-            generationConfig: { maxOutputTokens: 20 } 
+        const response = await genAI.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: fullPrompt
         });
 
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        const answer = response.text().trim().toLowerCase();
+        const answer = response.text?.trim().toLowerCase() || "";
 
         if (answer.includes("react")) {
             res.json({
@@ -62,24 +62,22 @@ app.post("/chat", async (req, res) => {
     try {
         const messages = req.body.messages; 
         
-        // Get the Gemini model for chat
-        const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash-latest",
-            systemInstruction: getSystemPrompt(), 
-            generationConfig: { maxOutputTokens: 8000 }
-        });
+        const systemPrompt = getSystemPrompt();
+        const geminiMessages = [
+            { role: 'user', parts: [{ text: systemPrompt }] },
+            ...messages.map((msg: { role: string; content: any; }) => ({
+                role: msg.role === 'assistant' ? 'model' : 'user', 
+                parts: [{ text: msg.content }]
+            }))
+        ];
 
-        const geminiMessages = messages.map((msg: { role: string; content: any; }) => ({
-            role: msg.role === 'assistant' ? 'model' : 'user', 
-            parts: [{ text: msg.content }]
-        }));
-
-        const result = await model.generateContent({
-            contents: geminiMessages,
+        const response = await genAI.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: geminiMessages
         });
 
         res.json({
-            response: result.response.text()
+            response: response.text || ""
         });
 
     } catch (error) {
@@ -89,6 +87,11 @@ app.post("/chat", async (req, res) => {
 });
 
 const PORT = 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+
+export default app;
+
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}

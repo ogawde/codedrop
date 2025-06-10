@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { FolderTree, File, ChevronRight, ChevronDown } from 'lucide-react';
 import { FileItem } from '../types';
 
@@ -11,6 +11,14 @@ interface FileNodeProps {
   item: FileItem;
   depth: number;
   onFileClick: (file: FileItem) => void;
+}
+
+function sortItems(items: FileItem[]): FileItem[] {
+  return [...items].sort((a, b) => {
+    if (a.type === 'folder' && b.type !== 'folder') return -1;
+    if (a.type !== 'folder' && b.type === 'folder') return 1;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 function FileNode({ item, depth, onFileClick }: FileNodeProps) {
@@ -49,7 +57,7 @@ function FileNode({ item, depth, onFileClick }: FileNodeProps) {
       </div>
       {item.type === 'folder' && isExpanded && item.children && (
         <div>
-          {item.children.map((child, index) => (
+          {sortItems(item.children).map((child, index) => (
             <FileNode
               key={`${child.path}-${index}`}
               item={child}
@@ -71,7 +79,7 @@ export function FileExplorer({ files, onFileSelect }: FileExplorerProps) {
         File Explorer
       </h2>
       <div className="space-y-1">
-        {files.map((file, index) => (
+        {sortItems(files).map((file, index) => (
           <FileNode
             key={`${file.path}-${index}`}
             item={file}

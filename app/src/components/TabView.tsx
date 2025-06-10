@@ -1,5 +1,5 @@
-import React from 'react';
 import { Code2, Eye } from 'lucide-react';
+import { motion } from 'motion/react';
 
 interface TabViewProps {
   activeTab: 'code' | 'preview';
@@ -11,25 +11,48 @@ export function TabView({ activeTab, onTabChange }: TabViewProps) {
     <div className="flex space-x-2 mb-4">
       <button
         onClick={() => onTabChange('code')}
-        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+        className={`relative flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
           activeTab === 'code'
-            ? 'bg-gray-700 text-gray-100'
-            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+            ? 'text-gray-800'
+            : 'text-gray-100 hover:text-gray-200 hover:bg-gray-800'
         }`}
+        style={{
+          WebkitTapHighlightColor: 'transparent',
+        }}
       >
-        <Code2 className="w-4 h-4" />
-        Code
+        {activeTab === 'code' && (
+          <motion.span
+            layoutId="bubble"
+            className="absolute inset-0 z-10 bg-white mix-blend-difference"
+            style={{ borderRadius: 6 }}
+            transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+          />
+        )}
+        <Code2 className="w-4 h-4 relative z-20" />
+        <span className="relative z-20">Code</span>
       </button>
+      
       <button
         onClick={() => onTabChange('preview')}
-        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+        className={`relative flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
           activeTab === 'preview'
-            ? 'bg-gray-700 text-gray-100'
-            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+            ? 'text-gray-800'
+            : 'text-gray-100 hover:text-gray-200 hover:bg-gray-800'
         }`}
+        style={{
+          WebkitTapHighlightColor: 'transparent',
+        }}
       >
-        <Eye className="w-4 h-4" />
-        Preview
+        {activeTab === 'preview' && (
+          <motion.span
+            layoutId="bubble"
+            className="absolute inset-0 z-10 bg-white mix-blend-difference"
+            style={{ borderRadius: 6 }}
+            transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+          />
+        )}
+        <Eye className="w-4 h-4 relative z-20" />
+        <span className="relative z-20">Preview</span>
       </button>
     </div>
   );

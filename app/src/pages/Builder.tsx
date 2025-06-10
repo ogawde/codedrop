@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "motion/react";
 import { StepsList } from "../components/StepsList";
 import { FileExplorer } from "../components/FileExplorer";
 import { TabView } from "../components/TabView";
 import { CodeEditor } from "../components/CodeEditor";
 import { PreviewFrame } from "../components/PreviewFrame";
+import { ChatSection } from "../components/ChatSection";
 import { Step, FileItem, StepType } from "../types";
 import axios from "axios";
 import { BACKEND_URL } from "../config";
@@ -15,39 +17,39 @@ import { Loader } from "../components/Loader";
 export function Builder() {
   const location = useLocation();
 
-  const { prompt } = location.state as { prompt: string }; // this brings data from user
+  const { prompt } = location.state as { prompt: string };
 
-  const [userPrompt, setPrompt] = useState("");
   const [llmMessages, setLlmMessages] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >([]);
+  
+  const [uiMessages, setUiMessages] = useState<
     { role: "user" | "assistant"; content: string }[]
   >([]);
 
   const [loading, setLoading] = useState(false);
-  const [templateSet, setTemplateSet] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const webcontainer = useWebContainer();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [activeTab, setActiveTab] = useState<"code" | "preview">("code");
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
-  const [files, setFiles] = useState<FileItem[]>([]); //empty file driectory
-  const [steps, setSteps] = useState<Step[]>([]); // empty steps
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [steps, setSteps] = useState<Step[]>([]);
 
-  // What is this effect is doing is  taking the data from steps we got from init ()
 
   useEffect(() => {
     let originalFiles = [...files];
     let updateHappened = false;
-    // Filter for steps that are "pending" and iterate over them.
     steps
       .filter(({ status }) => status === "pending")
       .map((step) => {
         updateHappened = true;
 
-        // Only process steps of type 'CreateFile'.
         if (step?.type === StepType.CreateFile) {
-          let parsedPath = step.path?.split("/") ?? []; // ["src", "components", "App.tsx"]
-          let currentFileStructure = [...originalFiles]; // {}
+          let parsedPath = step.path?.split("/") ?? [];
+          let currentFileStructure = [...originalFiles];
           let finalAnswerRef = currentFileStructure;
 
           let currentFolder = "";
@@ -57,7 +59,6 @@ export function Builder() {
             parsedPath = parsedPath.slice(1);
 
             if (!parsedPath.length) {
-              // final file
               let file = currentFileStructure.find(
                 (x) => x.path === currentFolder
               );
@@ -72,12 +73,10 @@ export function Builder() {
                 file.content = step.code;
               }
             } else {
-              /// in a folder
               let folder = currentFileStructure.find(
                 (x) => x.path === currentFolder
               );
               if (!folder) {
-                // create the folder
                 currentFileStructure.push({
                   name: currentFolderName,
                   type: "folder",
@@ -106,17 +105,14 @@ export function Builder() {
         })
       );
     }
-    console.log(files);
   }, [steps, files]);
 
-  // This has something to do with the webconatiner ig
   useEffect(() => {
     const createMountStructure = (files: FileItem[]): Record<string, any> => {
       const mountStructure: Record<string, any> = {};
 
       const processFile = (file: FileItem, isRootFolder: boolean) => {
         if (file.type === "folder") {
-          // For folders, create a directory entry
           mountStructure[file.name] = {
             directory: file.children
               ? Object.fromEntries(
@@ -135,7 +131,6 @@ export function Builder() {
               },
             };
           } else {
-            // For files, create a file entry with contents
             return {
               file: {
                 contents: file.content || "",
@@ -147,166 +142,138 @@ export function Builder() {
         return mountStructure[file.name];
       };
 
-      // Process each top-level file/folder
       files.forEach((file) => processFile(file, true));
 
       return mountStructure;
     };
 
     const mountStructure = createMountStructure(files);
-
-    // Mount the structure if WebContainer is available
-    console.log(mountStructure);
     webcontainer?.mount(mountStructure);
   }, [files, webcontainer]);
 
   async function init() {
-    // we hit the backend with this function
-    const response = await axios.post(`${BACKEND_URL}/template`, {
-      prompt: prompt.trim(),
-    });
+    try {
+      const response = await axios.post(`${BACKEND_URL}/template`, {
+        prompt: prompt.trim(),
+      });
 
-    // setTemplateSet(true);
+      const { prompts, uiPrompts } = response.data;
 
-    // we get this in response from the backend url is /template
-    // prompt is the user generated one & uiprompts
+      setSteps(
+        parseXml(uiPrompts[0]).map((x: Step) => ({
+          ...x,
+          status: "pending",
+        }))
+      );
 
-    const { prompts, uiPrompts } = response.data;
+      const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
+        messages: [...prompts, prompt].map((content) => ({
+          role: "user",
+          content,
+        })),
+      });
 
-    // "steps" we will get from uiPrompts (template)
+      setSteps((s) => [
+        ...s,
+        ...parseXml(stepsResponse.data.response).map((x) => ({
+          ...x,
+          status: "pending" as "pending",
+        })),
+      ]);
 
-    setSteps(
-      parseXml(uiPrompts[0]).map((x: Step) => ({
+      setLlmMessages(
+        [...prompts, prompt].map((content) => ({
+          role: "user",
+          content,
+        }))
+      );
+
+      setLlmMessages((x) => [
         ...x,
-        status: "pending",
-      }))
-    );
+        { role: "assistant", content: stepsResponse.data.response },
+      ]);
 
-    // converting xml files by xml parser to steps
-    // setLoading(true);
-
-    const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
-      messages: [...prompts, prompt].map((content) => ({
-        role: "user",
-        content,
-      })),
-    });
-
-    setLoading(false);
-
-    setSteps((s) => [
-      ...s,
-      ...parseXml(stepsResponse.data.response).map((x) => ({
-        ...x,
-        status: "pending" as "pending",
-      })),
-    ]);
-
-    // okay after thsi all data is converted from xmls to steps
-
-    setLlmMessages(
-      [...prompts, prompt].map((content) => ({
-        role: "user",
-        content,
-      }))
-    );
-
-    setLlmMessages((x) => [
-      ...x,
-      { role: "assistant", content: stepsResponse.data.response },
-    ]);
+      setInitialLoading(false);
+    } catch (error) {
+      console.error("Initialization error:", error);
+      setInitialLoading(false);
+    }
   }
   useEffect(() => {
     init();
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col">
+    <div className="min-h-screen bg-gray-900 flex flex-col relative">
       <header className="bg-gray-800 border-b border-gray-700 px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-100">Website Builder</h1>
+        <h1 className="text-xl font-semibold text-gray-100">Code Drop AI</h1>
         <p className="text-sm text-gray-400 mt-1">Prompt: {prompt}</p>
       </header>
 
       <div className="flex-1 overflow-hidden">
-        <div className="h-full grid grid-cols-4 gap-6 p-6">
-          <div className="col-span-1 space-y-6 overflow-auto">
-            <div>
-              <div className="max-h-[75vh] overflow-scroll">
-                <StepsList
-                  steps={steps}
-                  currentStep={currentStep}
-                  onStepClick={setCurrentStep}
-                />
-              </div>
-              // steps
-              <div>
-                <div className="flex">
-                  <br />
-                  {(loading || !templateSet) && <Loader />}
-                  {!(loading || !templateSet) && (
-                    <div className="flex">
-                      <textarea
-                        value={userPrompt}
-                        onChange={(e) => {
-                          setPrompt(e.target.value);
-                        }}
-                        className="p-2 w-full"
-                      ></textarea>
-                      <button
-                        onClick={async () => {
-                          const newMessage = {
-                            role: "user" as "user",
-                            content: userPrompt,
-                          };
+        <div className="h-full grid grid-cols-6 gap-6 p-6">
+          <div className="col-span-1 flex flex-col gap-6 h-[calc(100vh-8rem)]">
+            <div className="h-1/2 overflow-hidden">
+              <StepsList
+                steps={steps}
+                currentStep={currentStep}
+                onStepClick={setCurrentStep}
+              />
+            </div>
 
-                          setLoading(true);
-                          const stepsResponse = await axios.post(
-                            `${BACKEND_URL}/chat`,
-                            {
-                              messages: [...llmMessages, newMessage],
-                            }
-                          );
-                          setLoading(false);
+            <div className="h-1/2 overflow-hidden">
+              <ChatSection
+                messages={uiMessages}
+                loading={loading}
+                onSendMessage={async (message) => {
+                  const newMessage = {
+                    role: "user" as "user",
+                    content: message,
+                  };
 
-                          setLlmMessages((x) => [...x, newMessage]);
-                          setLlmMessages((x) => [
-                            ...x,
-                            {
-                              role: "assistant",
-                              content: stepsResponse.data.response,
-                            },
-                          ]);
+                  setLoading(true);
+                  const stepsResponse = await axios.post(
+                    `${BACKEND_URL}/chat`,
+                    {
+                      messages: [...llmMessages, newMessage],
+                    }
+                  );
+                  setLoading(false);
 
-                          setSteps((s) => [
-                            ...s,
-                            ...parseXml(stepsResponse.data.response).map(
-                              (x) => ({
-                                ...x,
-                                status: "pending" as "pending",
-                              })
-                            ),
-                          ]);
-                        }}
-                        className="bg-purple-400 px-4"
-                      >
-                        Send
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+                  const assistantMessage = {
+                    role: "assistant" as "assistant",
+                    content: stepsResponse.data.response,
+                  };
+
+                  setLlmMessages((x) => [...x, newMessage, assistantMessage]);
+
+                  setUiMessages((x) => [...x, newMessage]);
+
+                  setSteps((s) => [
+                    ...s,
+                    ...parseXml(stepsResponse.data.response).map(
+                      (x) => ({
+                        ...x,
+                        status: "pending" as "pending",
+                      })
+                    ),
+                  ]);
+                }}
+              />
             </div>
           </div>
+
           <div className="col-span-1">
             <FileExplorer files={files} onFileSelect={setSelectedFile} />
           </div>
-          <div className="col-span-2 bg-gray-900 rounded-lg shadow-lg p-4 h-[calc(100vh-8rem)]">
+         
+          <div className="col-span-4 bg-gray-900 rounded-lg shadow-lg p-4 h-[calc(100vh-8rem)]">
             <TabView activeTab={activeTab} onTabChange={setActiveTab} />
             <div className="h-[calc(100%-4rem)]">
               {activeTab === "code" ? (
                 <CodeEditor file={selectedFile} />
               ) : webcontainer ? (
-                <PreviewFrame webContainer={webcontainer} files={files} />
+                <PreviewFrame webContainer={webcontainer} />
               ) : (
                 <Loader />
               )}
@@ -314,6 +281,34 @@ export function Builder() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {initialLoading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+              className="text-center"
+            >
+              <Loader />
+              <p className="mt-4 text-lg text-gray-300 font-medium">
+                Building your project...
+              </p>
+              <p className="mt-2 text-sm text-gray-400">
+                Setting up files and generating code
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

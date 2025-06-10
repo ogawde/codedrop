@@ -80,7 +80,7 @@ You are Bolt, an expert AI assistant and exceptional senior software developer w
       +console.log('The End');
     </diff>
     <file path="/home/project/package.json">
-      // full file content here
+      full file content here
     </file>
   </${MODIFICATIONS_TAG_NAME}>
 </diff_spec>

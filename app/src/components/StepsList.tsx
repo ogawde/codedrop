@@ -1,4 +1,3 @@
-import React from 'react';
 import { CheckCircle, Circle, Clock } from 'lucide-react';
 import { Step } from '../types';
 
@@ -8,7 +7,7 @@ interface StepsListProps {
   onStepClick: (stepId: number) => void;
 }
 
-export function StepsList({ steps, currentStep, onStepClick }: StepsListProps) {
+export function StepsList({ steps, currentStep }: StepsListProps) {
   return (
     <div className="bg-gray-900 rounded-lg shadow-lg p-4 h-full overflow-auto">
       <h2 className="text-lg font-semibold mb-4 text-gray-100">Build Steps</h2>
@@ -16,12 +15,11 @@ export function StepsList({ steps, currentStep, onStepClick }: StepsListProps) {
         {steps.map((step) => (
           <div
             key={step.id}
-            className={`p-1 rounded-lg cursor-pointer transition-colors ${
+            className={`p-1 rounded-lg transition-colors ${
               currentStep === step.id
                 ? 'bg-gray-800 border border-gray-700'
-                : 'hover:bg-gray-800'
+                : ''
             }`}
-            onClick={() => onStepClick(step.id)}
           >
             <div className="flex items-center gap-2">
               {step.status === 'completed' ? (
